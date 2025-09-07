@@ -1,0 +1,69 @@
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+#include <BlynkSimpleEsp32.h>
+
+// Blynk credentials
+#define BLYNK_TEMPLATE_ID "YourTemplateID"
+#define BLYNK_TEMPLATE_NAME "Solar Monitor"
+#define BLYNK_AUTH_TOKEN "YourAuthToken"
+char ssid[] = "YourWiFi";
+char pass[] = "YourPassword";
+
+// Sensors
+Adafruit_INA219 ina219;
+
+// ACS712 config
+const int ACS712_PIN = 34;
+const float ACS712_OFFSET = 2.5;         // Voltage at 0A
+const float ACS712_SENSITIVITY = 0.185;  // V/A for 5A module
+const float ADC_REF_VOLTAGE = 3.3;
+
+// Solar Panel Properties
+const float panelArea = 0.15;        // in square meters (example: 0.3m x 0.5m = 0.15 m²)
+const float panelEfficiency = 0.18;  // 18% panel efficiency
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+
+  // Start INA219
+  if (!ina219.begin()) {
+    Serial.println("Failed to find INA219 chip");
+    while (1);
+  }
+
+  // Start Blynk
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  analogReadResolution(12);  // 12-bit ADC for ESP32
+}
+
+void loop() {
+  Blynk.run();
+
+  // --- Voltage from INA219 ---
+  float voltage = ina219.getBusVoltage_V();
+
+  // --- Current from ACS712 ---
+  int rawADC = analogRead(ACS712_PIN);
+  float analogVoltage = rawADC * (ADC_REF_VOLTAGE / 4095.0);
+  float current = (analogVoltage - ACS712_OFFSET) / ACS712_SENSITIVITY;
+
+  // --- Power Calculation ---
+  float power = voltage * current;
+
+  // --- Irradiance Estimation ---
+  float irradiance = power / (panelArea * panelEfficiency);  // in W/m²
+
+  // --- Debug Output ---
+  Serial.printf("Voltage: %.2f V | Current: %.2f A | Power: %.2f W | Irradiance: %.2f W/m²\n",
+                voltage, current, power, irradiance);
+
+  // --- Send to Blynk ---
+  Blynk.virtualWrite(V0, voltage);
+  Blynk.virtualWrite(V1, current);
+  Blynk.virtualWrite(V2, power);
+  Blynk.virtualWrite(V3, irradiance);
+
+  delay(1000);  // Update rate
+}
